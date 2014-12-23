@@ -77,14 +77,21 @@
           (throw (IllegalArgumentException.
                   (pr-str "Unparsable namespace form:" form)))))
 
-(defn- deps-from-ns-form [form]
-  (when (and (list? form)
-	     (contains? #{:use :require} (first form)))
-    (mapcat #(deps-from-libspec nil %) (rest form))))
+(defn- require-call?
+  "Returns true if form is invocation of clojure.core/use or clojure.core/require"
+  [form]
+  (and (seq? form)
+       (contains? #{'clojure.core/use 'clojure.core/require} (first form))))
 
 (defn deps-from-ns-decl
   "Given an (ns...) declaration form (unevaluated), returns a set of
   symbols naming the dependencies of that namespace.  Handles :use and
   :require clauses but not :load."
-  [decl]
-  (set (mapcat deps-from-ns-form decl)))
+  [ns-decl]
+  (->> (macroexpand ns-decl)
+       (tree-seq seq? #(if (require-call? %) nil (seq %)))
+       (filter require-call?)
+       (mapcat rest) ; Remove clojure.core/*
+       (map second) ; Remove quote
+       (mapcat #(deps-from-libspec nil %))
+       set))
